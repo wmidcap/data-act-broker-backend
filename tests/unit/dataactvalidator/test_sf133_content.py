@@ -59,6 +59,7 @@ def test_sf133_files(database):
         if file_match:
             file_index = "{0}_{1}".format(file_match.group('year'), file_match.group('period'))
 
+            print("Testing file: "+sf133.full_file)
             data = load_sf133.clean_sf133_data(sf133.full_file, None)
 
             # sort data by unique TAS
