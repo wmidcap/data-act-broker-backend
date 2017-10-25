@@ -250,7 +250,6 @@ def copy_parent_file_request_data(sess, child_job, parent_job, file_type, is_loc
     child_job.number_of_errors = parent_job.number_of_errors
     child_job.number_of_warnings = parent_job.number_of_warnings
     child_job.error_message = parent_job.error_message
-    mark_job_status(child_job.job_id, JOB_STATUS_DICT_ID[parent_job.job_status_id])
 
     # change the validation job's file data when within a submission
     if child_job.submission_id is not None:
@@ -267,11 +266,11 @@ def copy_parent_file_request_data(sess, child_job, parent_job, file_type, is_loc
         response = s3.list_objects_v2(Bucket=CONFIG_BROKER['aws_bucket'], Prefix=child_job.filename)
         for obj in response.get('Contents', []):
             if obj['Key'] == child_job.filename:
-                # this file already exists in this location
+                # the file already exists in this location
                 logger.debug('Cached {} file CSV already exists in this location'.format(file_type))
                 return
 
-        # make a copy of the parent file in child's S3 location
+        # copy the parent file into the child's S3 location
         logger.debug('Copying {} file from job {} to job {}'.format(file_type, parent_job.job_id, child_job.job_id))
         with smart_open.smart_open(S3Handler.create_file_path(parent_job.filename), 'r') as reader:
             with smart_open.smart_open(S3Handler.create_file_path(child_job.filename), 'w') as writer:
@@ -281,3 +280,6 @@ def copy_parent_file_request_data(sess, child_job, parent_job, file_type, is_loc
                         writer.write(chunk)
                     else:
                         break
+
+    # mark job status last so the validation job doesn't start until everything is done
+    mark_job_status(child_job.job_id, JOB_STATUS_DICT_ID[parent_job.job_status_id])
