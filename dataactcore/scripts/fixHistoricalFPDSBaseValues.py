@@ -84,7 +84,9 @@ def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date=
 def process_and_add(data, contract_type, sess):
     utcnow = datetime.datetime.utcnow()
     for value in data:
+        # retrieve necessary data from the FPDS object
         tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type)
+        # update the database with the new content
         sess.query(DetachedAwardProcurement).\
             filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
             update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
