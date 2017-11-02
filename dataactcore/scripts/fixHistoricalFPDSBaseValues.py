@@ -1,5 +1,7 @@
+import argparse
 import datetime
 import logging
+import re
 import requests
 import time
 import xmltodict
@@ -22,8 +24,8 @@ NAMESPACES = {
 logger = logging.getLogger(__name__)
 
 
-def get_data(contract_type, award_type, sess):
-    dates = 'SIGNED_DATE:[2016/10/01,2016/10/03]'  # fix fields from October 01, 2016 to September 05, 2017
+def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date='2017/09/05'):
+    dates = 'SIGNED_DATE:[{},{}]'.format(start_date, end_date)
     feed_string = '{}{} CONTRACT_TYPE:"{}" AWARD_TYPE:"{}"'.format(FEED_URL, dates, contract_type.upper(), award_type)
     data = []
     i, loops = 0, 0
@@ -93,6 +95,7 @@ def process_and_add(data, contract_type, sess):
 
 def process_data(data, atom_type):
     temp_obj = {}
+    # retrieve the fields within the unique identifier string 
     if atom_type == "award":
         temp_obj = award_id_values(data['awardID'], temp_obj)
     else:
@@ -100,30 +103,55 @@ def process_data(data, atom_type):
         temp_obj['transaction_number'] = None
         temp_obj = contract_id_values(data['contractID'], temp_obj)
 
+    # assign values if they exist, otherwise set to None
     try:
         temp_obj['base_and_all_options_value'] = extract_text(data['dollarValues']['baseAndAllOptionsValue'])
     except:
         temp_obj['base_and_all_options_value'] = None
-
     try:
         temp_obj['base_exercised_options_val'] = extract_text(data['dollarValues']['baseAndExercisedOptionsValue'])
     except KeyError:
         temp_obj['base_exercised_options_val'] = None
 
+    # generate the unique identifier string
     temp_obj['detached_award_proc_unique'] = generate_unique_string(temp_obj)
     return temp_obj
 
 
 def main():
     sess = GlobalDB.db().session
-    # IDV stuff
+    parser = argparse.ArgumentParser(description='Pull data from the FPDS Atom Feed.')
+    parser.add_argument('-s', '--start', help='First date in the pull', nargs=1, type=str)
+    parser.add_argument('-e', '--end', help='Last date in the pull', nargs=1, type=str)
+    parser.add_argument('-t', '--types', help='Update values for just the award types listed', nargs="+", type=str)
+    args = parser.parse_args()
+
+    # assign start date, end date, and requested award_types if parameters exist
+    start_date = args.start[0] if args.start else None
+    end_date = args.end[0] if args.end else None
+    requested_types = args.types if args.types else ["GWAC", "BOA", "BPA", "FSS", "IDC", "BPA Call",
+                                                     "Definitive Contract", "Purchase Order", "Delivery Order"]
+
+    # ensure start and end dates are in the correct format
+    regex = re.compile('[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]')
+    if start_date and not regex.match(start_date):
+        logger.warning('Start date is not in the proper format')
+        return
+    if end_date and not regex.match(end_date):
+        logger.warning('End date is not in the proper format')
+        return
+
+    # loop through "IDV" award types with the selected dates
     award_types_idv = ["GWAC", "BOA", "BPA", "FSS", "IDC"]
     for award_type in award_types_idv:
-        get_data("IDV", award_type, sess)
-    # award stuff
+        if award_type in requested_types:
+            get_data("IDV", award_type, sess, start_date, end_date)
+
+    # loop through "award" award types with the selected dates
     award_types_award = ["BPA Call", "Definitive Contract", "Purchase Order", "Delivery Order"]
     for award_type in award_types_award:
-        get_data("award", award_type, sess)
+        if award_type in requested_types:
+            get_data("award", award_type, sess, start_date, end_date)
 
 
 if __name__ == '__main__':
