@@ -784,6 +784,13 @@ def calculate_remaining_fields(obj, sub_tier_list):
             obj['funding_agency_code'] = '999'
             obj['funding_agency_name'] = None
 
+    # The order of the unique key is agency_id, referenced_idv_agency_iden, piid, award_modification_amendme,
+    # parent_award_id, transaction_number
+    obj['detached_award_proc_unique'] = generate_unique_string(obj)
+    return obj
+
+
+def generate_unique_string(obj):
     key_list = ['agency_id', 'referenced_idv_agency_iden', 'piid', 'award_modification_amendme', 'parent_award_id',
                 'transaction_number']
     unique_string = ""
@@ -795,11 +802,7 @@ def calculate_remaining_fields(obj, sub_tier_list):
                 unique_string += "-none-"
         except KeyError:
             unique_string += "-none-"
-
-    # The order of the unique key is agency_id, referenced_idv_agency_iden, piid, award_modification_amendme,
-    # parent_award_id, transaction_number
-    obj['detached_award_proc_unique'] = unique_string
-    return obj
+    return unique_string
 
 
 def process_data(data, atom_type, sub_tier_list):
