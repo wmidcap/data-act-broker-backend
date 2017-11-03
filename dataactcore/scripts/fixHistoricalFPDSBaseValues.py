@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date='2017/09/05'):
+    utcnow = datetime.datetime.utcnow()
     dates = 'SIGNED_DATE:[{},{}]'.format(start_date, end_date)
     feed_string = '{}{} CONTRACT_TYPE:"{}" AWARD_TYPE:"{}"'.format(FEED_URL, dates, contract_type.upper(), award_type)
     data = []
@@ -63,7 +64,7 @@ def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date=
         # Log which one we're on so we can keep track of how far we are, insert into DB every 5k lines
         if loops % 500 == 0 and loops != 0:
             logger.info("Retrieved %s lines of get %s: %s feed, writing next 5,000 to DB", i, contract_type, award_type)
-            process_and_add(data, contract_type, sess)
+            process_and_add(data, contract_type, sess, utcnow)
             data = []
 
             logger.info("Successfully inserted 5,000 lines of get %s: %s feed, continuing feed retrieval",
@@ -78,16 +79,15 @@ def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date=
     if data != []:
         # insert whatever is left
         logger.info("Processing remaining lines for %s: %s feed", contract_type, award_type)
-        process_and_add(data, contract_type, sess)
+        process_and_add(data, contract_type, sess, utcnow)
 
 
-def process_and_add(data, contract_type, sess):
-    utcnow = datetime.datetime.utcnow()
+def process_and_add(data, contract_type, sess, utcnow):
     for value in data:
         # retrieve necessary data from the FPDS object
         tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type)
         # update the database with the new content
-        thing = sess.query(DetachedAwardProcurement).\
+        sess.query(DetachedAwardProcurement).\
             filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
             update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
                     'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
@@ -97,7 +97,7 @@ def process_and_add(data, contract_type, sess):
 
 def process_data(data, atom_type):
     temp_obj = {}
-    # retrieve the fields within the unique identifier string 
+    # retrieve the fields within the unique identifier string
     if atom_type == "award":
         temp_obj = award_id_values(data['awardID'], temp_obj)
     else:
