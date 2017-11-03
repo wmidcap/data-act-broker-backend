@@ -87,11 +87,12 @@ def process_and_add(data, contract_type, sess):
         # retrieve necessary data from the FPDS object
         tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type)
         # update the database with the new content
-        sess.query(DetachedAwardProcurement).\
+        print(tmp_obj['detached_award_proc_unique'])
+        thing = sess.query(DetachedAwardProcurement).\
             filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
             update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
-                    'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
-                    'updated_at': utcnow}, synchronize_session=False)
+                      'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
+                      'updated_at': utcnow}, synchronize_session=False)
     sess.commit()
 
 
@@ -128,9 +129,17 @@ def main():
     parser.add_argument('-t', '--types', help='Update values for just the award types listed', nargs="+", type=str)
     args = parser.parse_args()
 
-    # assign start date, end date, and requested award_types if parameters exist
-    start_date = args.start[0] if args.start else None
-    end_date = args.end[0] if args.end else None
+    # add start date and/or end date if they exist
+    init_params = [sess]
+    start_date, end_date = None, None
+    if args.start:
+        start_date = args.start[0]
+        init_params.append(start_date)
+    if args.end:
+        end_date = args.end[0]
+        init_params.append(end_date)
+
+    # set requested types if any exist
     requested_types = args.types if args.types else ["GWAC", "BOA", "BPA", "FSS", "IDC", "BPA Call",
                                                      "Definitive Contract", "Purchase Order", "Delivery Order"]
 
@@ -147,13 +156,15 @@ def main():
     award_types_idv = ["GWAC", "BOA", "BPA", "FSS", "IDC"]
     for award_type in award_types_idv:
         if award_type in requested_types:
-            get_data("IDV", award_type, sess, start_date, end_date)
+            params = ["IDV", award_type] + init_params
+            get_data(*params)
 
     # loop through "award" award types with the selected dates
     award_types_award = ["BPA Call", "Definitive Contract", "Purchase Order", "Delivery Order"]
     for award_type in award_types_award:
         if award_type in requested_types:
-            get_data("award", award_type, sess, start_date, end_date)
+            params = ["award", award_type] + init_params
+            get_data(*params)
 
 
 if __name__ == '__main__':
