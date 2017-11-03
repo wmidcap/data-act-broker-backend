@@ -9,11 +9,14 @@ import xmltodict
 import numpy as np
 import pandas as pd
 import csv
+import io
 
 import datetime
 import time
 import re
 import threading
+
+from dateutil.relativedelta import relativedelta
 
 from dataactcore.logging import configure_logging
 from dataactcore.config import CONFIG_BROKER
@@ -33,6 +36,8 @@ from dataactcore.models.userModel import User  # noqa
 
 from dataactvalidator.health_check import create_app
 from dataactvalidator.scripts.loaderUtils import clean_data, insert_dataframe
+from dataactvalidator.filestreaming.csvS3Writer import CsvS3Writer
+from dataactvalidator.filestreaming.csvLocalWriter import CsvLocalWriter
 
 feed_url = "https://www.fpds.gov/ezsearch/FEEDS/ATOM?FEEDNAME=PUBLIC&templateName=1.4.5&q="
 delete_url = "https://www.fpds.gov/ezsearch/FEEDS/ATOM?FEEDNAME=DELETED&templateName=1.4.5&q="
@@ -795,6 +800,8 @@ def generate_unique_string(obj):
                 'transaction_number']
     unique_string = ""
     for item in key_list:
+        if len(unique_string) > 0:
+            unique_string += "_"
         try:
             if obj[item]:
                 unique_string += obj[item]
@@ -946,25 +953,35 @@ def process_delete_data(data, atom_type):
         except (KeyError, TypeError):
             unique_string += "-none-"
 
+        unique_string += "_"
+
         try:
             unique_string += extract_text(data['awardID']['referencedIDVID']['agencyID'])
         except (KeyError, TypeError):
             unique_string += "-none-"
+
+        unique_string += "_"
 
         try:
             unique_string += extract_text(data['awardID']['awardContractID']['PIID'])
         except (KeyError, TypeError):
             unique_string += "-none-"
 
+        unique_string += "_"
+
         try:
             unique_string += extract_text(data['awardID']['awardContractID']['modNumber'])
         except (KeyError, TypeError):
             unique_string += "-none-"
 
+        unique_string += "_"
+
         try:
             unique_string += extract_text(data['awardID']['referencedIDVID']['PIID'])
         except (KeyError, TypeError):
             unique_string += "-none-"
+
+        unique_string += "_"
 
         try:
             unique_string += extract_text(data['awardID']['awardContractID']['transactionNumber'])
@@ -976,20 +993,28 @@ def process_delete_data(data, atom_type):
         except (KeyError, TypeError):
             unique_string += "-none-"
 
+        unique_string += "_"
+
         try:
             unique_string += extract_text(data['contractID']['referencedIDVID']['agencyID'])
         except (KeyError, TypeError):
             unique_string += "-none-"
+
+        unique_string += "_"
 
         try:
             unique_string += extract_text(data['contractID']['IDVID']['PIID'])
         except (KeyError, TypeError):
             unique_string += "-none-"
 
+        unique_string += "_"
+
         try:
             unique_string += extract_text(data['contractID']['IDVID']['modNumber'])
         except (KeyError, TypeError):
             unique_string += "-none-"
+
+        unique_string += "_"
 
         try:
             unique_string += extract_text(data['contractID']['referencedIDVID']['PIID'])
@@ -997,7 +1022,7 @@ def process_delete_data(data, atom_type):
             unique_string += "-none-"
 
         # transaction_number not in IDV feed, just set it to "-none-"
-        unique_string += "-none-"
+        unique_string += "_-none-"
 
     return unique_string
 
@@ -1025,19 +1050,38 @@ def add_processed_data_list(data, sess):
         sess.commit()
 
 
-def process_and_add(data, contract_type, sess, sub_tier_list):
+def process_and_add(data, contract_type, sess, sub_tier_list, now, threaded=False):
     """ start the processing for data and add it to the DB """
-    for value in data:
-        tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type, sub_tier_list=sub_tier_list)
-        insert_statement = insert(DetachedAwardProcurement).values(**tmp_obj).\
-            on_conflict_do_update(index_elements=['detached_award_proc_unique'], set_=tmp_obj)
-        sess.execute(insert_statement)
+    if threaded:
+        for value in data:
+            tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type,
+                                   sub_tier_list=sub_tier_list)
+            tmp_obj['updated_at'] = now
+            insert_statement = insert(DetachedAwardProcurement).values(**tmp_obj).\
+                on_conflict_do_update(index_elements=['detached_award_proc_unique'], set_=tmp_obj)
+            sess.execute(insert_statement)
+    else:
+        for value in data:
+            tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type,
+                                   sub_tier_list=sub_tier_list)
+            try:
+                statement = insert(DetachedAwardProcurement).values(**tmp_obj)
+                sess.execute(statement)
+                sess.commit()
+            except IntegrityError:
+                sess.rollback()
+                tmp_obj['updated_at'] = now
+                sess.query(DetachedAwardProcurement).\
+                    filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
+                    update(tmp_obj, synchronize_session=False)
+                sess.commit()
 
 
-def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None):
+def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None, threaded=False):
     """ get the data from the atom feed based on contract/award type and the last time the script was run """
     data = []
     yesterday = now - datetime.timedelta(days=1)
+    utcnow = datetime.datetime.utcnow()
     # if a date that the script was last successfully run is not provided, get all data
     if not last_run:
         # params = 'SIGNED_DATE:[2015/10/01,'+ yesterday.strftime('%Y/%m/%d') + '] '
@@ -1045,7 +1089,7 @@ def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None)
         # params = 'SIGNED_DATE:[2017/07/01,' + yesterday.strftime('%Y/%m/%d') + '] '
     # if a date that the script was last successfully run is provided, get data since that date
     else:
-        last_run_date = last_run.update_date
+        last_run_date = last_run.update_date - relativedelta(days=1)
         params = 'LAST_MOD_DATE:[' + last_run_date.strftime('%Y/%m/%d') + ',' + yesterday.strftime('%Y/%m/%d') + '] '
 
     # TODO remove this later, this is just for testing
@@ -1060,7 +1104,7 @@ def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None)
     while True:
         loops += 1
         exception_retries = -1
-        retry_sleep_times = [5, 30, 60]
+        retry_sleep_times = [5, 30, 60, 180, 300]
         # looping in case feed breaks
         while True:
             try:
@@ -1073,7 +1117,7 @@ def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None)
             except ConnectionResetError:
                 exception_retries += 1
                 # retry up to 3 times before raising an error
-                if exception_retries < 3:
+                if exception_retries < len(retry_sleep_times):
                     time.sleep(retry_sleep_times[exception_retries])
                 else:
                     raise ResponseException(
@@ -1100,7 +1144,7 @@ def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None)
             logger.info("Retrieved %s lines of get %s: %s feed, writing next 1,000 to DB", i, contract_type, award_type)
             # if we're calling threads, we want process_and_add, otherwise we want add_processed_data_list
             if last_run:
-                process_and_add(data, contract_type, sess, sub_tier_list)
+                process_and_add(data, contract_type, sess, sub_tier_list, utcnow, threaded)
             else:
                 add_processed_data_list(data, sess)
             data = []
@@ -1118,7 +1162,7 @@ def get_data(contract_type, award_type, now, sess, sub_tier_list, last_run=None)
     logger.info("Processing remaining lines for %s: %s feed", contract_type, award_type)
     # if we're calling threads, we want process_and_add, otherwise we want add_processed_data_list
     if last_run:
-        process_and_add(data, contract_type, sess, sub_tier_list)
+        process_and_add(data, contract_type, sess, sub_tier_list, utcnow, threaded)
     else:
         add_processed_data_list(data, sess)
 
@@ -1139,7 +1183,8 @@ def get_delete_data(contract_type, now, sess, last_run):
                             timeout=60)
         resp_data = xmltodict.parse(resp.text, process_namespaces=True,
                                     namespaces={'http://www.fpdsng.com/FPDS': None,
-                                                'http://www.w3.org/2005/Atom': None})
+                                                'http://www.w3.org/2005/Atom': None,
+                                                'https://www.fpds.gov/FPDS': None})
         # only list the data if there's data to list
         try:
             listed_data = list_data(resp_data['feed']['entry'])
@@ -1161,6 +1206,7 @@ def get_delete_data(contract_type, now, sess, last_run):
     logger.info("Total entries in %s delete feed: " + str(i), contract_type)
 
     delete_list = []
+    delete_dict = {}
     for value in data:
         # get last modified date
         last_modified = value['content'][contract_type]['transactionInformation']['lastModifiedDate']
@@ -1173,6 +1219,10 @@ def get_delete_data(contract_type, now, sess, last_run):
             # only add to delete list if the last modified date is later than the existing entry's last modified date
             if last_modified > existing_item.last_modified:
                 delete_list.append(existing_item.detached_award_procurement_id)
+                delete_dict[existing_item.detached_award_procurement_id] = existing_item.detached_award_proc_unique
+        # TODO remove this after the first run
+        # else:
+        #     delete_dict[unique_string] = unique_string
 
     # only need to delete values if there's something to delete
     if delete_list:
@@ -1180,16 +1230,36 @@ def get_delete_data(contract_type, now, sess, last_run):
             filter(DetachedAwardProcurement.detached_award_procurement_id.in_(delete_list)).\
             delete(synchronize_session=False)
 
+    # writing the file
+    seconds = int((datetime.datetime.utcnow() - datetime.datetime(1970, 1, 1)).total_seconds())
+    file_name = now.strftime('%m-%d-%Y') + "_delete_records_" + contract_type + "_" + str(seconds) + ".csv"
+    headers = ["detached_award_procurement_id", "detached_award_proc_unique"]
+    if CONFIG_BROKER["use_aws"]:
+        with CsvS3Writer(CONFIG_BROKER['aws_region'], CONFIG_BROKER['fpds_delete_bucket'], file_name,
+                         headers) as writer:
+            for key, value in delete_dict.items():
+                writer.write([key, value])
+            writer.finish_batch()
+    else:
+        with CsvLocalWriter(file_name, headers) as writer:
+            for key, value in delete_dict.items():
+                writer.write([key, value])
+            writer.finish_batch()
 
-def parse_fpds_file(f, sess, sub_tier_list, naics_dict):
-    logger.info("Starting file " + str(f.name))
 
-    csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f.name))[0]
+def parse_fpds_file(f, sess, sub_tier_list, naics_dict, filename=None):
+    if not filename:
+        logger.info("Starting file " + str(f))
+        csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f))[0]
+    else:
+        logger.info("Starting file " + str(filename))
+        csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(filename))[0]
 
     nrows = 0
-    with zipfile.ZipFile(f.name) as zfile:
+    with zipfile.ZipFile(f) as zfile:
         with zfile.open(csv_file) as dat_file:
             nrows = len(dat_file.readlines())
+            logger.info("File contains %s rows", nrows)
 
     block_size = 10000
     batches = nrows // block_size
@@ -1257,21 +1327,34 @@ def parse_fpds_file(f, sess, sub_tier_list, naics_dict):
     while batch <= batches:
         skiprows = 1 if batch == 0 else (batch * block_size)
         nrows = (((batch + 1) * block_size) - skiprows) if (batch < batches) else last_block_size
-        logger.info('loading rows %s to %s', skiprows + 1, nrows + skiprows)
+        logger.info('Starting load for rows %s to %s', skiprows + 1, nrows + skiprows)
 
-        with zipfile.ZipFile(f.name) as zfile:
+        with zipfile.ZipFile(f) as zfile:
             with zfile.open(csv_file) as dat_file:
                 data = pd.read_csv(dat_file, dtype=str, header=None, skiprows=skiprows, nrows=nrows, names=all_cols)
 
                 cdata = format_fpds_data(data, sub_tier_list, naics_dict)
                 if cdata is not None:
-                    logger.info("loading {} rows".format(len(cdata.index)))
+                    logger.info("Loading {} rows into database".format(len(cdata.index)))
 
-                    insert_dataframe(cdata, DetachedAwardProcurement.__table__.name, sess.connection())
+                    try:
+                        insert_dataframe(cdata, DetachedAwardProcurement.__table__.name, sess.connection())
+                        sess.commit()
+                    except IntegrityError:
+                        sess.rollback()
+                        logger.info("Bulk load failed, individually loading %s rows into database", len(cdata.index))
+                        for index, row in cdata.iterrows():
+                            try:
+                                statement = insert(DetachedAwardProcurement).values(**row)
+                                sess.execute(statement)
+                                sess.commit()
+                            except IntegrityError:
+                                sess.rollback()
+                                logger.info("Found duplicate: %s, row not inserted", row['detached_award_proc_unique'])
 
         added_rows += nrows
         batch += 1
-    sess.commit()
+    logger.info("Finished loading file")
 
 
 def format_fpds_data(data, sub_tier_list, naics_data):
@@ -1916,6 +1999,8 @@ def create_unique_key(row):
     key_list = ['agencyid', 'idvagencyid', 'piid', 'modnumber', 'idvpiid', 'transactionnumber']
     unique_string = ""
     for item in key_list:
+        if len(unique_string) > 0:
+            unique_string += "_"
         if row[item] and str(row[item]) != 'nan':
             unique_string += str(row[item])
         else:
@@ -1940,6 +2025,7 @@ def main():
     parser.add_argument('-sf', '--subfolder',
                         help='Used in conjunction with -f to indicate which Subfolder to load files from',
                         nargs="+", type=str)
+    parser.add_argument('-t', '--threaded', help='Multithread nightly load', action='store_true')
     args = parser.parse_args()
 
     award_types_award = ["BPA Call", "Definitive Contract", "Purchase Order", "Delivery Order"]
@@ -1991,30 +2077,40 @@ def main():
                 "No last_update date present, please run the script with the -a flag to generate an initial dataset")
             raise ValueError(
                 "No last_update date present, please run the script with the -a flag to generate an initial dataset")
+        # determining if we're doing a threaded call or not
+        if args.threaded:
+            thread_list = []
+            # loop through and check all award types, check IDV stuff first because it generally has less content
+            # so the threads will actually leave earlier and can be terminated in the loop
+            for award_type in award_types_idv:
+                t = threading.Thread(target=get_data,
+                                     args=("IDV", award_type, now, sess, sub_tier_list, last_update, True),
+                                     name=award_type)
+                thread_list.append(t)
+                t.start()
 
-        thread_list = []
-        # loop through and check all award types, check IDV stuff first because it generally has less content
-        # so the threads will actually leave earlier and can be terminated in the loop
-        for award_type in award_types_idv:
-            t = threading.Thread(target=get_data, args=("IDV", award_type, now, sess, sub_tier_list, last_update),
-                                 name=award_type)
-            thread_list.append(t)
-            t.start()
+            # join the threads between types and then start with a fresh set of threads. We don't want to overtax
+            # the CPU
+            for t in thread_list:
+                t.join()
 
-        # join the threads between types and then start with a fresh set of threads. We don't want to overtax
-        # the CPU
-        for t in thread_list:
-            t.join()
+            thread_list = []
+            for award_type in award_types_award:
+                t = threading.Thread(target=get_data,
+                                     args=("award", award_type, now, sess, sub_tier_list, last_update, True),
+                                     name=award_type)
+                thread_list.append(t)
+                t.start()
 
-        thread_list = []
-        for award_type in award_types_award:
-            t = threading.Thread(target=get_data, args=("award", award_type, now, sess, sub_tier_list, last_update),
-                                 name=award_type)
-            thread_list.append(t)
-            t.start()
+            for t in thread_list:
+                t.join()
+            sess.commit()
+        else:
+            for award_type in award_types_idv:
+                get_data("IDV", award_type, now, sess, sub_tier_list, last_update)
 
-        for t in thread_list:
-            t.join()
+            for award_type in award_types_award:
+                get_data("award", award_type, now, sess, sub_tier_list, last_update)
 
         # We also need to process the delete feed
         get_delete_data("IDV", now, sess, last_update)
@@ -2044,14 +2140,22 @@ def main():
 
             # parse contracts files
             s3bucket = s3connection.lookup(CONFIG_BROKER['archive_bucket'])
-            for key in s3bucket.list():
+            if subfolder:
+                subfolder = subfolder + "/"
+            for key in s3bucket.list(prefix=subfolder):
+                match_string = '^\d{4}_All_Contracts_Full_\d{8}.csv.zip'
                 if subfolder:
-                    key = subfolder + "/" + key
-                if re.match('^\d{4}_All_Contracts_Full_\d{8}.csv.zip', key.name):
-                    # we only want up through 2015 for this data
-                    if int(key.name[:4]) <= max_year:
-                        file_path = key.generate_url(expires_in=600)
-                        parse_fpds_file(urllib.request.urlopen(file_path), sess, sub_tier_list, naics_dict)
+                    match_string = "^" + subfolder + "\d{4}_All_Contracts_Full_\d{8}.csv.zip"
+                if re.match(match_string, key.name):
+                    # we only want up through 2015 for this data unless it’s a subfolder, then do all of them
+                    if subfolder or int(key.name[:4]) <= max_year:
+                        # Create an in-memory bytes IO buffer
+                        with io.BytesIO() as b:
+                            # Read the file into it
+                            key.get_file(b)
+
+                            # Reset the file pointer to the beginning
+                            parse_fpds_file(b, sess, sub_tier_list, naics_dict, filename=key.name)
         else:
             # get naics dictionary
             naics_path = os.path.join(CONFIG_BROKER["path"], "dataactvalidator", "config")
@@ -2068,7 +2172,7 @@ def main():
                 if re.match('^\d{4}_All_Contracts_Full_\d{8}.csv.zip', file):
                     # we only want up through 2015 for this data
                     if int(file[:4]) <= max_year:
-                        parse_fpds_file(open(os.path.join(base_path, file)), sess, sub_tier_list, naics_dict)
+                        parse_fpds_file(open(os.path.join(base_path, file)).name, sess, sub_tier_list, naics_dict)
 
         logger.info("Ending at: " + str(datetime.datetime.now()))
         sess.commit()
