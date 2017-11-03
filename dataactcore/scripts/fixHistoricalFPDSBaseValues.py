@@ -24,7 +24,9 @@ NAMESPACES = {
 logger = logging.getLogger(__name__)
 
 
-def get_data(contract_type, award_type, sess, start_date='2016/10/01', end_date='2017/09/05'):
+def get_data(contract_type, award_type, sess, start, end):
+    start_date = start if start else '2016/10/01'
+    end_date = end if end else '2017/09/05'
     utcnow = datetime.datetime.utcnow()
     dates = 'SIGNED_DATE:[{},{}]'.format(start_date, end_date)
     feed_string = '{}{} CONTRACT_TYPE:"{}" AWARD_TYPE:"{}"'.format(FEED_URL, dates, contract_type.upper(), award_type)
@@ -128,17 +130,9 @@ def main():
     parser.add_argument('-t', '--types', help='Update values for just the award types listed', nargs="+", type=str)
     args = parser.parse_args()
 
-    # add start date and/or end date if they exist
-    init_params = [sess]
-    start_date, end_date = None, None
-    if args.start:
-        start_date = args.start[0]
-        init_params.append(start_date)
-    if args.end:
-        end_date = args.end[0]
-        init_params.append(end_date)
-
-    # set requested types if any exist
+    # add start date, end date, and/or requested types if they exist
+    start_date = args.start[0] if args.start else None
+    end_date = args.end[0] if args.end else None
     requested_types = args.types if args.types else ["GWAC", "BOA", "BPA", "FSS", "IDC", "BPA Call",
                                                      "Definitive Contract", "Purchase Order", "Delivery Order"]
 
@@ -155,15 +149,13 @@ def main():
     award_types_idv = ["GWAC", "BOA", "BPA", "FSS", "IDC"]
     for award_type in award_types_idv:
         if award_type in requested_types:
-            params = ["IDV", award_type] + init_params
-            get_data(*params)
+            get_data("IDV", award_type, sess, start_date, end_date)
 
     # loop through "award" award types with the selected dates
     award_types_award = ["BPA Call", "Definitive Contract", "Purchase Order", "Delivery Order"]
     for award_type in award_types_award:
         if award_type in requested_types:
-            params = ["award", award_type] + init_params
-            get_data(*params)
+            get_data("award", award_type, sess, start_date, end_date)
 
 
 if __name__ == '__main__':
