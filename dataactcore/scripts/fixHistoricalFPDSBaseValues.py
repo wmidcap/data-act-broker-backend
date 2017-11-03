@@ -87,12 +87,11 @@ def process_and_add(data, contract_type, sess):
         # retrieve necessary data from the FPDS object
         tmp_obj = process_data(value['content'][contract_type], atom_type=contract_type)
         # update the database with the new content
-        print(tmp_obj['detached_award_proc_unique'])
         thing = sess.query(DetachedAwardProcurement).\
             filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
             update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
-                      'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
-                      'updated_at': utcnow}, synchronize_session=False)
+                    'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
+                    'updated_at': utcnow}, synchronize_session=False)
     sess.commit()
 
 
