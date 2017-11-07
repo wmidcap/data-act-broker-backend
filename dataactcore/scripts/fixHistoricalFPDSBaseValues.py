@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_data(contract_type, award_type, sess, start, end):
-    start_date = start if start else '2016/10/01'
+    start_date = start if start else '2015/10/01'
     end_date = end if end else '2017/09/05'
     utcnow = datetime.datetime.utcnow()
     dates = 'SIGNED_DATE:[{},{}]'.format(start_date, end_date)

@@ -21,7 +21,7 @@ BLOCK_SIZE = 10000
 logger = logging.getLogger(__name__)
 
 
-def parse_fpds_file(f, sess):
+def parse_fpds_file(f, sess, missing_rows, since_updated):
     utcnow = datetime.datetime.utcnow()
     logger.info("Starting file " + str(f))
     csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f))[0]
@@ -58,7 +58,7 @@ def parse_fpds_file(f, sess):
         "idvpiid": "parent_award_id"
     }
 
-    while batch <= batches:
+    while batch <= 0:
         skiprows = 1 if batch == 0 else (batch * BLOCK_SIZE)
         nrows = (((batch + 1) * BLOCK_SIZE) - skiprows) if (batch < batches) else last_block_size
         logger.info('Starting load for rows %s to %s', skiprows + 1, nrows + skiprows)
@@ -69,24 +69,35 @@ def parse_fpds_file(f, sess):
                 data = pd.read_csv(dat_file, dtype=str, header=None, skiprows=skiprows, nrows=nrows,
                                    usecols=column_header_mapping_ordered.values(),
                                    names=column_header_mapping_ordered.keys())
+                data = data.where((pd.notnull(data)), None)
 
                 # update rows in the database
                 logger.info("Updating {} rows".format(len(data.index)))
-                for record in data:
+                for index, row in data.iterrows():
                     # create new object with correct values
                     tmp_obj = {}
                     for key in [key for key in model_mapping]:
-                        tmp_obj[model_mapping[key]] = record[key]
+                        tmp_obj[model_mapping[key]] = str(row[key]) if row[key] is not None else None
 
                     # generate unique string
                     tmp_obj['detached_award_proc_unique'] = generate_unique_string(tmp_obj)
 
-                    # update the database with the new content
-                    sess.query(DetachedAwardProcurement).\
-                        filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
-                        update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
-                                'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
-                                'updated_at': utcnow}, synchronize_session=False)
+                    # retrieve the row from the database
+                    record = sess.query(DetachedAwardProcurement).\
+                                  filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).first()
+                    if record is None:
+                        # add data to array to be printed later
+                        missing_rows.append(tmp_obj)
+                    elif record.updated_at >= datetime.date(2017, 9, 5):
+                        # log the unique key and add data to array to be printed later
+                        logger.info("Skipping record due to updated_at field: %s",
+                                    str(tmp_obj['detached_award_proc_unique']))
+                        since_updated.append(record)
+                    else:
+                        # update record
+                        record['base_and_all_options_value'] = tmp_obj['base_and_all_options_value']
+                        record['base_exercised_options_val'] = tmp_obj['base_exercised_options_val']
+                        record['updated_at'] = utcnow
                 # commit changes
                 sess.commit()
         added_rows += nrows
@@ -99,6 +110,7 @@ def main():
     parser = argparse.ArgumentParser(description='Pull data from the FPDS Atom Feed.')
     parser.add_argument('-p', '--path', help='Filepath to the directory to pull the files from.', nargs=1, type=str)
     args = parser.parse_args()
+    missing_rows, since_updated = [], []
 
     # use filepath if provided, otherwise use the default
     file_path = args.path[0] if args.path else os.path.join(CONFIG_BROKER["path"], "dataactvalidator", "config", "fabs")
@@ -107,7 +119,20 @@ def main():
     file_list = [f for f in os.listdir(file_path)]
     for file in file_list:
         if re.match('^\d{4}_All_Contracts_Full_\d{8}.csv.zip', file):
-            parse_fpds_file(open(os.path.join(file_path, file)).name, sess)
+            parse_fpds_file(open(os.path.join(file_path, file)).name, sess, missing_rows, since_updated)
+
+    if len(missing_rows) > 0:
+        logger.info('Records that don\'t exist in the database:')
+        for row in missing_rows:
+            logger.info('unique_key: %s, base_exercised_options_val: %s, base_and_all_options_value: %s',
+                        row['detached_award_proc_unique'], row['base_exercised_options_val'],
+                        row['base_and_all_options_value'])
+    if len(since_updated) > 0:
+        logger.info('Records updated since 09/05/2017 (and not updated from this script):')
+        for row in since_updated:
+            logger.info('unique_key: %s, base_exercised_options_val: %s, base_and_all_options_value: %s, updated_at: %s',
+                        row['detached_award_proc_unique'], row['base_exercised_options_val'],
+                        row['base_and_all_options_value'], row['updated_at'])
 
 if __name__ == '__main__':
     with create_app().app_context():
