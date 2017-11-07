@@ -16,7 +16,7 @@ from dataactcore.scripts.pullFPDSData import generate_unique_string
 
 from dataactvalidator.health_check import create_app
 
-BLOCK_SIZE = 10000
+BLOCK_SIZE = 25000
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
     column_header_mapping = {
         "baseandexercisedoptionsvalue": 3,
         "baseandalloptionsvalue": 4,
+        "signeddate": 13,
         "agencyid": 94,
         "piid": 95,
         "modnumber": 96,
@@ -62,7 +63,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
     while batch <= batches:
         skiprows = 1 if batch == 0 else (batch * BLOCK_SIZE)
         nrows = (((batch + 1) * BLOCK_SIZE) - skiprows) if (batch < batches) else last_block_size
-        logger.info('Starting load for rows %s to %s', skiprows + 1, nrows + skiprows)
+        logger.info('Preparing next block of rows (%s to %s)', skiprows + 1, nrows + skiprows)
 
         with zipfile.ZipFile(f) as zfile:
             with zfile.open(csv_file) as dat_file:
@@ -70,10 +71,17 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
                 data = pd.read_csv(dat_file, dtype=str, header=None, skiprows=skiprows, nrows=nrows,
                                    usecols=column_header_mapping_ordered.values(),
                                    names=column_header_mapping_ordered.keys())
+
+                # remove null rows and rows where the date is not within 10/01/2015-09/05/2017
                 data = data.where((pd.notnull(data)), None)
+                data['signeddate'] = data.apply(lambda row: format_signeddate(row), axis=1)
+                data = data[~(data['signeddate'].isnull())].copy()
 
                 # update rows in the database
-                logger.info("Updating {} rows".format(len(data.index)))
+                if len(data.index) > 0:
+                    logger.info("Updating {} rows".format(len(data.index)))
+                else:
+                    logger.info("0 rows exist in this block with signeddates between 10/01/2015 and 09/05/2017")
                 for index, row in data.iterrows():
                     # create new object with correct values
                     tmp_obj = {}
@@ -85,7 +93,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
 
                     # retrieve the row from the database
                     record = sess.query(DetachedAwardProcurement).\
-                                  filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).first()
+                        filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).first()
                     if record is None:
                         # add data to array to be printed later
                         missing_rows.append(tmp_obj)
@@ -104,6 +112,14 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
         added_rows += nrows
         batch += num_nodes
     logger.info("Finished loading file")
+
+
+def format_signeddate(row):
+    split_date = str(row['signeddate']).split('/')
+    date = datetime.date(int(split_date[2]), int(split_date[0]), int(split_date[1])) if len(split_date) >= 3 else None
+    if date is not None and (date < datetime.date(2015, 10, 1) or date > datetime.date(2017, 9, 5)):
+        date = None
+    return date
 
 
 def main():
@@ -141,7 +157,7 @@ def main():
     if len(since_updated) > 0:
         logger.info('Records updated since 09/05/2017 (and not updated from this script):')
         for row in since_updated:
-            logger.info('unique_key: %s, base_exercised_options_val: %s, base_and_all_options_value: %s, updated_at: %s',
+            logger.info('uniquekey: %s, base_exercised_options_val: %s, base_and_all_options_value: %s, updated_at: %s',
                         row['detached_award_proc_unique'], row['base_exercised_options_val'],
                         row['base_and_all_options_value'], row['updated_at'])
 
