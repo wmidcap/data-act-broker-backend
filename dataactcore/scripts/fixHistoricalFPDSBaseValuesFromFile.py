@@ -27,11 +27,11 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
     csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f))[0]
 
     # count and print the number of rows
-    # nrows = 0
-    # with zipfile.ZipFile(f) as zfile:
-    #     with zfile.open(csv_file) as dat_file:
-    #         nrows = len(dat_file.readlines())
-    #         logger.info("File contains %s rows", nrows)
+    nrows = 0
+    with zipfile.ZipFile(f) as zfile:
+        with zfile.open(csv_file) as dat_file:
+            nrows = len(dat_file.readlines())
+            logger.info("File contains %s rows", nrows)
 
     batches = nrows // BLOCK_SIZE
     last_block_size = (nrows % BLOCK_SIZE)
