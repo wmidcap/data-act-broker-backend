@@ -66,11 +66,11 @@ def get_data(contract_type, award_type, sess, start, end):
         # Log which one we're on so we can keep track of how far we are, insert into DB every 5k lines
         if loops % 100 == 0 and loops != 0:
             logger.info("Retrieved %s lines of get %s: %s feed, writing next 1,000 to DB", i, contract_type, award_type)
-            # process_and_add(data, contract_type, sess, utcnow)
+            process_and_add(data, contract_type, sess, utcnow)
             data = []
 
-            # logger.info("Successfully inserted 1,000 lines of get %s: %s feed, continuing feed retrieval",
-            #             contract_type, award_type)
+            logger.info("Successfully inserted 1,000 lines of get %s: %s feed, continuing feed retrieval",
+                        contract_type, award_type)
 
         # if we got less than 10 records, we can stop calling the feed
         if len(listed_data) < 10:
@@ -79,7 +79,7 @@ def get_data(contract_type, award_type, sess, start, end):
     if data != []:
         # insert whatever is left
         logger.info("Processing remaining lines for %s: %s feed", contract_type, award_type)
-        # process_and_add(data, contract_type, sess, utcnow)
+        process_and_add(data, contract_type, sess, utcnow)
 
     logger.info("Total entries in %s: %s feed: " + str(i), contract_type, award_type)
     logger.info("records per second: %s", str(i / (datetime.datetime.utcnow()-utcnow).total_seconds()))
