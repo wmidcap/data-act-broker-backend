@@ -21,7 +21,7 @@ BLOCK_SIZE = 10000
 logger = logging.getLogger(__name__)
 
 
-def parse_fpds_file(f, sess, missing_rows, since_updated):
+def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index):
     utcnow = datetime.datetime.utcnow()
     logger.info("Starting file " + str(f))
     csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f))[0]
@@ -35,7 +35,8 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
 
     batches = nrows // BLOCK_SIZE
     last_block_size = (nrows % BLOCK_SIZE)
-    batch, added_rows = 0, 0
+    batch = node_index
+    added_rows = 0
     column_header_mapping = {
         "baseandexercisedoptionsvalue": 3,
         "baseandalloptionsvalue": 4,
@@ -101,7 +102,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
                 # commit changes
                 sess.commit()
         added_rows += nrows
-        batch += 1
+        batch += num_nodes
     logger.info("Finished loading file")
 
 
@@ -109,17 +110,27 @@ def main():
     sess = GlobalDB.db().session
     parser = argparse.ArgumentParser(description='Pull data from the FPDS Atom Feed.')
     parser.add_argument('-p', '--path', help='Filepath to the directory to pull the files from.', nargs=1, type=str)
+    parser.add_argument('-n', '--nodes', help='Number of nodes running the script.', nargs=1, type=int)
+    parser.add_argument('-c', '--current_node', help='Index of the current node.', nargs=1, type=int)
     args = parser.parse_args()
     missing_rows, since_updated = [], []
 
     # use filepath if provided, otherwise use the default
     file_path = args.path[0] if args.path else os.path.join(CONFIG_BROKER["path"], "dataactvalidator", "config", "fabs")
 
+    # set number of nodes, if provided
+    num_nodes = args.nodes[0] if args.nodes else 1
+    node_index = args.current_node[0] if args.current_node else 1
+    if (args.nodes and not args.current_node) or (not args.nodes and args.current_node):
+        logger.warning('If running with multiple nodes, must provide number of nodes and this version\'s index')
+        return
+
     # parse all Contracts files
     file_list = [f for f in os.listdir(file_path)]
     for file in file_list:
         if re.match('^\d{4}_All_Contracts_Full_\d{8}.csv.zip', file):
-            parse_fpds_file(open(os.path.join(file_path, file)).name, sess, missing_rows, since_updated)
+            file = open(os.path.join(file_path, file)).name
+            parse_fpds_file(file, sess, missing_rows, since_updated, num_nodes, node_index)
 
     if len(missing_rows) > 0:
         logger.info('Records that don\'t exist in the database:')
