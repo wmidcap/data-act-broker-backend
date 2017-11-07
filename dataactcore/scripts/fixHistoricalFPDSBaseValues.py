@@ -124,8 +124,7 @@ def process_data(data, atom_type):
 
 
 def main():
-    # sess = GlobalDB.db().session
-    sess = []
+    sess = GlobalDB.db().session
     parser = argparse.ArgumentParser(description='Pull data from the FPDS Atom Feed.')
     parser.add_argument('-s', '--start', help='First date in the pull', nargs=1, type=str)
     parser.add_argument('-e', '--end', help='Last date in the pull', nargs=1, type=str)
