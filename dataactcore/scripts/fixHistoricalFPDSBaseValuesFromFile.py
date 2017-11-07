@@ -30,7 +30,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
     nrows = 0
     with zipfile.ZipFile(f) as zfile:
         with zfile.open(csv_file) as dat_file:
-            nrows = len(dat_file.readlines())
+            nrows = sum(1 for _ in dat_file)
             logger.info("File contains %s rows", nrows)
 
     batches = nrows // BLOCK_SIZE
