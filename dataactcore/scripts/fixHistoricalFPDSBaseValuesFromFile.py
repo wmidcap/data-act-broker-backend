@@ -27,11 +27,11 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
     csv_file = 'datafeeds\\' + os.path.splitext(os.path.basename(f))[0]
 
     # count and print the number of rows
-    nrows = 0
-    with zipfile.ZipFile(f) as zfile:
-        with zfile.open(csv_file) as dat_file:
-            nrows = len(dat_file.readlines())
-            logger.info("File contains %s rows", nrows)
+    # nrows = 0
+    # with zipfile.ZipFile(f) as zfile:
+    #     with zfile.open(csv_file) as dat_file:
+    #         nrows = len(dat_file.readlines())
+    #         logger.info("File contains %s rows", nrows)
 
     batches = nrows // BLOCK_SIZE
     last_block_size = (nrows % BLOCK_SIZE)
@@ -58,7 +58,7 @@ def parse_fpds_file(f, sess, missing_rows, since_updated):
         "idvpiid": "parent_award_id"
     }
 
-    while batch <= 0:
+    while batch <= batches:
         skiprows = 1 if batch == 0 else (batch * BLOCK_SIZE)
         nrows = (((batch + 1) * BLOCK_SIZE) - skiprows) if (batch < batches) else last_block_size
         logger.info('Starting load for rows %s to %s', skiprows + 1, nrows + skiprows)
