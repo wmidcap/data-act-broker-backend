@@ -101,16 +101,16 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
                     if record is None:
                         # add data to array to be printed later
                         missing_rows.append(tmp_obj)
-                    elif record.updated_at >= datetime.datetime(2017, 9, 5):
+                    elif record.updated_at >= datetime.datetime(2017, 9, 6):
                         # log the unique key and add data to array to be printed later
                         logger.info("Skipping record due to updated_at field: %s",
                                     str(tmp_obj['detached_award_proc_unique']))
                         since_updated.append(record)
                     else:
                         # update record
-                        record['base_and_all_options_value'] = tmp_obj['base_and_all_options_value']
-                        record['base_exercised_options_val'] = tmp_obj['base_exercised_options_val']
-                        record['updated_at'] = utcnow
+                        record.base_and_all_options_value = tmp_obj['base_and_all_options_value']
+                        record.base_exercised_options_val = tmp_obj['base_exercised_options_val']
+                        record.updated_at = utcnow
                 # commit changes
                 sess.commit()
         added_rows += nrows
