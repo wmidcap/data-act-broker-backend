@@ -97,10 +97,11 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
                     # retrieve the row from the database
                     record = sess.query(DetachedAwardProcurement).\
                         filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).first()
+
                     if record is None:
                         # add data to array to be printed later
                         missing_rows.append(tmp_obj)
-                    elif record.updated_at >= datetime.date(2017, 9, 5):
+                    elif record.updated_at >= datetime.datetime(2017, 9, 5):
                         # log the unique key and add data to array to be printed later
                         logger.info("Skipping record due to updated_at field: %s",
                                     str(tmp_obj['detached_award_proc_unique']))
