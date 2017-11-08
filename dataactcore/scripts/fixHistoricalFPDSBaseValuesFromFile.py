@@ -88,6 +88,9 @@ def parse_fpds_file(f, sess, missing_rows, since_updated, num_nodes, node_index)
                     for key in [key for key in model_mapping]:
                         tmp_obj[model_mapping[key]] = str(row[key]) if row[key] is not None else None
 
+                    # fix the agency_id
+                    tmp_obj['agency_id'] = tmp_obj['agency_id'].split(':')[0] if tmp_obj['agency_id'] else None
+
                     # generate unique string
                     tmp_obj['detached_award_proc_unique'] = generate_unique_string(tmp_obj)
 
