@@ -94,6 +94,10 @@ def process_and_add(data, contract_type, sess, utcnow):
             filter_by(detached_award_proc_unique=tmp_obj['detached_award_proc_unique']).\
             update({'base_and_all_options_value': tmp_obj['base_and_all_options_value'],
                     'base_exercised_options_val': tmp_obj['base_exercised_options_val'],
+                    'federal_action_obligation': tmp_obj['federal_action_obligation'],
+                    'potential_total_value_awar': tmp_obj['potential_total_value_awar'],
+                    'current_total_value_award': tmp_obj['current_total_value_award'],
+                    'total_obligated_amount': tmp_obj['total_obligated_amount'],
                     'updated_at': utcnow}, synchronize_session=False)
     sess.commit()
 
