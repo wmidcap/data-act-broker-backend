@@ -111,13 +111,28 @@ def process_data(data, atom_type):
     # assign values if they exist, otherwise set to None
     try:
         temp_obj['base_and_all_options_value'] = extract_text(data['dollarValues']['baseAndAllOptionsValue'])
-    except:
+    except KeyError:
         temp_obj['base_and_all_options_value'] = None
     try:
         temp_obj['base_exercised_options_val'] = extract_text(data['dollarValues']['baseAndExercisedOptionsValue'])
     except KeyError:
         temp_obj['base_exercised_options_val'] = None
-
+    try:
+        temp_obj['federal_action_obligation'] = extract_text(data['dollarValues']['obligatedAmount'])
+    except KeyError:
+        temp_obj['federal_action_obligation'] = None
+    try:
+        temp_obj['potential_total_value_awar'] = extract_text(data['dollarValues']['totalBaseAndAllOptionsValue'])
+    except KeyError:
+        temp_obj['potential_total_value_awar'] = None
+    try:
+        temp_obj['current_total_value_award'] = extract_text(data['dollarValues']['totalBaseAndExercisedOptionsValue'])
+    except KeyError:
+        temp_obj['current_total_value_award'] = None
+    try:
+        temp_obj['total_obligated_amount'] = extract_text(data['dollarValues']['totalObligatedAmount'])
+    except KeyError:
+        temp_obj['total_obligated_amount'] = None
     # generate the unique identifier string
     temp_obj['detached_award_proc_unique'] = generate_unique_string(temp_obj)
     return temp_obj
