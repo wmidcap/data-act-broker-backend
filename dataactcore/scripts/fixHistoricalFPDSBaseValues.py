@@ -126,15 +126,15 @@ def process_data(data, atom_type):
     except KeyError:
         temp_obj['federal_action_obligation'] = None
     try:
-        temp_obj['potential_total_value_awar'] = extract_text(data['dollarValues']['totalBaseAndAllOptionsValue'])
+        temp_obj['potential_total_value_awar'] = extract_text(data['totalDollarValues']['totalBaseAndAllOptionsValue'])
     except KeyError:
         temp_obj['potential_total_value_awar'] = None
     try:
-        temp_obj['current_total_value_award'] = extract_text(data['dollarValues']['totalBaseAndExercisedOptionsValue'])
+        temp_obj['current_total_value_award'] = extract_text(data['totalDollarValues']['totalBaseAndExercisedOptionsValue'])
     except KeyError:
         temp_obj['current_total_value_award'] = None
     try:
-        temp_obj['total_obligated_amount'] = extract_text(data['dollarValues']['totalObligatedAmount'])
+        temp_obj['total_obligated_amount'] = extract_text(data['totalDollarValues']['totalObligatedAmount'])
     except KeyError:
         temp_obj['total_obligated_amount'] = None
     # generate the unique identifier string
