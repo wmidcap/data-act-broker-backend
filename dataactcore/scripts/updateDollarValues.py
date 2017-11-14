@@ -75,7 +75,7 @@ def main():
 
     # make the URI from the required parameters
     host = args.host[0]
-    dbname = args.dbname[0]
+    dbname = args.dbname[0] if args.dbname else 'data_broker'
     username = args.username[0]
     password = args.password[0]
     uri = "postgresql://{}:{}@{}:5432/{}".format(username, password, host, dbname)
