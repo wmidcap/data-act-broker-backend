@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sqlalchemy
+import re
 
 from dataactcore.interfaces.db import GlobalDB, _DB
 from dataactcore.logging import configure_logging
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 QUERY_SIZE = 10000
 
 
-def update_dollar_values(sess, external_sess):
+def update_dollar_values(sess, external_sess, start_date, end_date):
     # save code space by using dap_model instead of DetachedAwardProcurement
     dap_model = DetachedAwardProcurement
 
@@ -91,7 +92,7 @@ def main():
     end_date = args.end[0] if args.end else '09/05/2017'
 
     # ensure start and end dates are in the correct format
-    regex = re.compile('[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]')
+    regex = re.compile('[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
     if start_date and not regex.match(start_date):
         logger.warning('Start date is not in the proper format')
         return
