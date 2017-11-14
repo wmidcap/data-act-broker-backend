@@ -88,8 +88,8 @@ def main():
     external_sess = _DB(engine, connection, scoped_session_maker, scoped_session_maker()).session
 
     # add start date, end date, and/or requested types if they exist
-    start_date = args.start[0] if args.start else '10/01/2015'
-    end_date = args.end[0] if args.end else '09/05/2017'
+    start_date = args.start[0] if args.start else '2015-10-01'
+    end_date = args.end[0] if args.end else '2017-09-05'
 
     # ensure start and end dates are in the correct format
     regex = re.compile('[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
