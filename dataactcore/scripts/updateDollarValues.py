@@ -34,8 +34,8 @@ def update_dollar_values(sess, external_sess, start_date, end_date):
                                            dap_model.base_exercised_options_val, dap_model.federal_action_obligation,
                                            dap_model.potential_total_value_awar, dap_model.current_total_value_award,
                                            dap_model.total_obligated_amount).\
-            filter(cast(dap_model.action_date, Date) >= start_date).\
-            filter(cast(dap_model.action_date, Date) <= end_date).\
+            filter(dap_model.action_date >= start_date).\
+            filter(dap_model.action_date <= end_date).\
             slice(page_start, page_stop).all()
 
         # no more records to pull
