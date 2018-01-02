@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 QUERY_SIZE = 10000
 
 
-def update_dollar_values(sess, external_sess, start_date, end_date):
+def update_empty_fpds_values(sess, external_sess, start_date, end_date):
     # save code space by using dap_model instead of DetachedAwardProcurement
     dap_model = DetachedAwardProcurement
 
@@ -33,7 +33,7 @@ def update_dollar_values(sess, external_sess, start_date, end_date):
         updated_data = external_sess.query(dap_model.detached_award_proc_unique, dap_model.base_and_all_options_value,
                                            dap_model.base_exercised_options_val, dap_model.federal_action_obligation,
                                            dap_model.potential_total_value_awar, dap_model.current_total_value_award,
-                                           dap_model.total_obligated_amount).\
+                                           dap_model.women_owned_small_business, dap_model.total_obligated_amount).\
             filter(dap_model.action_date >= start_date).\
             filter(dap_model.action_date <= end_date).\
             slice(page_start, page_stop).all()
@@ -51,7 +51,8 @@ def update_dollar_values(sess, external_sess, start_date, end_date):
                 "federal_action_obligation": record.federal_action_obligation,
                 "potential_total_value_awar": record.potential_total_value_awar,
                 "current_total_value_award": record.current_total_value_award,
-                "total_obligated_amount": record.total_obligated_amount
+                "total_obligated_amount": record.total_obligated_amount,
+                "women_owned_small_business": record.women_owned_small_business
             })
 
         # ensure we're not done, then increment the page_idx
@@ -101,7 +102,7 @@ def main():
         return
 
     # run queries
-    update_dollar_values(sess, external_sess, start_date, end_date)
+    update_empty_fpds_values(sess, external_sess, start_date, end_date)
 
 
 if __name__ == '__main__':
